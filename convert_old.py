@@ -13,7 +13,7 @@ from collections import defaultdict
 import numpy as np
 from keras import backend as K
 from keras.layers import (Conv2D, Input, ZeroPadding2D, Add,
-                          UpSampling2D, MaxPooling2D, Concatenate)
+                          UpSampling2D, Concatenate)
 from keras.layers.advanced_activations import LeakyReLU
 from keras.layers.normalization import BatchNormalization
 from keras.models import Model
@@ -30,11 +30,6 @@ parser.add_argument(
     '--plot_model',
     help='Plot generated Keras model and save as image.',
     action='store_true')
-parser.add_argument(
-    '-w',
-    '--weights_only',
-    help='Save as Keras weights file instead of model file.',
-    action='store_true')
 
 def unique_config_sections(config_file):
     """Convert all config sections to have unique names.
@@ -42,7 +37,7 @@ def unique_config_sections(config_file):
     Adds unique suffixes to config sections for compability with configparser.
     """
     section_counters = defaultdict(int)
-    output_stream = io.StringIO()
+    output_stream = io.StringIO() #io.StringIO()
     with open(config_file) as fin:
         for line in fin:
             if line.startswith('['):
@@ -83,6 +78,8 @@ def _main(args):
     unique_config_file = unique_config_sections(config_path)
     cfg_parser = configparser.ConfigParser()
     cfg_parser.read_file(unique_config_file)
+    for section in cfg_parser.sections():
+        print(section)
 
     print('Creating Keras model.')
     input_layer = Input(shape=(None, None, 3))
@@ -199,23 +196,13 @@ def _main(args):
                 all_layers.append(skip_layer)
                 prev_layer = skip_layer
 
-        elif section.startswith('maxpool'):
-            size = int(cfg_parser[section]['size'])
-            stride = int(cfg_parser[section]['stride'])
-            all_layers.append(
-                MaxPooling2D(
-                    pool_size=(size, size),
-                    strides=(stride, stride),
-                    padding='same')(prev_layer))
-            prev_layer = all_layers[-1]
-
         elif section.startswith('shortcut'):
             index = int(cfg_parser[section]['from'])
             activation = cfg_parser[section]['activation']
             assert activation == 'linear', 'Only linear activation supported.'
             all_layers.append(Add()([all_layers[index], prev_layer]))
             prev_layer = all_layers[-1]
-
+        
         elif section.startswith('upsample'):
             stride = int(cfg_parser[section]['stride'])
             assert stride == 2, 'Only stride=2 supported.'
@@ -230,21 +217,19 @@ def _main(args):
         elif section.startswith('net'):
             pass
 
+        elif section.startswith('maxpool'):
+            size = int(cfg_parser[section]['size'])
+            stride = int(cfg_parser[section]['stride'])
+			
         else:
             raise ValueError(
                 'Unsupported section header type: {}'.format(section))
 
     # Create and save model.
-    if len(out_index)==0: out_index.append(len(all_layers)-1)
     model = Model(inputs=input_layer, outputs=[all_layers[i] for i in out_index])
     print(model.summary())
-    if args.weights_only:
-        model.save_weights('{}'.format(output_path))
-        print('Saved Keras weights to {}'.format(output_path))
-    else:
-        model.save('{}'.format(output_path))
-        print('Saved Keras model to {}'.format(output_path))
-
+    model.save('{}'.format(output_path))
+    print('Saved Keras model to {}'.format(output_path))
     # Check to see if all weights have been read.
     remaining_weights = len(weights_file.read()) / 4
     weights_file.close()
